@@ -67,36 +67,45 @@ class LiepinSpider(scrapy.Spider):
         # from scrapy.shell import inspect_response
         # inspect_response(response, self)
 
+        required_conditions = soup.find('div', attrs={'class': 'resume clearfix'}) or soup.find('div', attrs={
+            'class': 'job-qualifications'})
+
         require_degree, work_experience, required_skills, required_age = [r.text for r in
-                                                                          soup.find('div', attrs={
-                                                                              'class': 'job-qualifications'}).find_all(
-                                                                              'span')]
+                                                                          required_conditions.find_all(
+                                                                              'span') if required_conditions] or [None,
+                                                                                                                  None,
+                                                                                                                  None,
+                                                                                                                  None]
         basic_info = soup.find('p', attrs={'class': 'basic-infor'}).text.strip().split(' ')
 
         position = basic_info[0]
         pub_date = basic_info[-1]
         try:
 
-            yield JobItem(
-                title=soup.find('div', attrs={'class': 'title-info'}).h1.text.strip(),
-                salary=soup.find('p', attrs={'class': 'job-item-title'}).text.split('\n')[0],
-
-                require_degree=require_degree,
-                work_experience=work_experience,
-                required_skills=required_skills,
-                required_age=required_age,
-
-                tags=','.join([r.text for r in soup.find_all('span', attrs={'class': 'tag'})]),
-
-                job_description=soup.find('div', attrs={'class': 'content content-word'}).text,
-
-                company_name=soup.find('div', attrs={'class': 'title-info'}).h3.text.strip(),
-                company_description=soup.find('div', attrs={'class': 'job-item main-message noborder'}).text,
-
-                position=position,
-                pub_date=pub_date
-            )
-
+            company_description = (
+                soup.find('div', attrs={'class': 'job-item main-message noborder'}) or soup.find('div', attrs={
+                    'class': 'job-main noborder  main-message'})).text
         except Exception as e:
-            LOG.warn("Job Item parse failure %s", str(e))
-            traceback.print_exc()
+            company_description = None
+            LOG.warn("Fetch company descrition error %s %s", str(e), response.url)
+
+        yield JobItem(
+            title=soup.find('div', attrs={'class': 'title-info'}).h1.text.strip(),
+            salary=(soup.find('p', attrs={'class': 'job-item-title'}) or
+                    soup.find('div', attrs={
+                        'class': 'job-title-left'})).text.split('\n')[0],
+            require_degree=require_degree,
+            work_experience=work_experience,
+            required_skills=required_skills,
+            required_age=required_age,
+
+            tags=','.join([r.text for r in soup.find_all('span', attrs={'class': 'tag'})]),
+
+            job_description=soup.find('div', attrs={'class': 'content content-word'}).text,
+
+            company_name=soup.find('div', attrs={'class': 'title-info'}).h3.text.strip(),
+            company_description=company_description,
+
+            position=position,
+            pub_date=pub_date
+        )
