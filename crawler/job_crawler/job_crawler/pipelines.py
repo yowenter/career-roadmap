@@ -7,16 +7,17 @@
 
 
 from job_crawler.storage.storage_driver import get_storage_driver
+from job_crawler.items import JobItem
+from job_crawler.storage.storage_driver import get_storage_driver
 
 
 class JobCrawlerPipeline(object):
     def process_item(self, item, spider):
-        self.store_item(item)
+        self.storage_driver.write(dict(item))
 
-    def store_item(self, item):
-        driver = get_storage_driver()
+    def close_spider(self, spider):
+        self.storage_driver.close()
 
-        driver.save_json(item)
-
-
-        
+    def open_spider(self, spider):
+        self.storage_driver = get_storage_driver(keys=JobItem.fields.keys())
+        self.storage_driver.init()

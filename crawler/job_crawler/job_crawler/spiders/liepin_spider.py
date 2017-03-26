@@ -2,8 +2,12 @@
 
 import scrapy
 import re
+import logging
+import traceback
 from bs4 import BeautifulSoup as Soup
 from job_crawler.items import JobItem
+
+LOG = logging.getLogger(__name__)
 
 
 class LiepinSpider(scrapy.Spider):
@@ -22,10 +26,10 @@ class LiepinSpider(scrapy.Spider):
             "{}?key={}".format(self.custom_settings['base_url'], k) for k in self.custom_settings['keywords']
             ]
         for url in start_urls:
-            yield scrapy.Request(url, callback=lambda r: self.pagination_jobs(r, max_page=1))
+            yield scrapy.Request(url, callback=lambda r: self.pagination_jobs(r))
 
     def pagination_jobs(self, response, max_page=None):
-        soup = Soup(response.body)
+        soup = Soup(response.body, "lxml")
         # for debug
         # from scrapy.shell import inspect_response
         # inspect_response(response, self)
@@ -42,6 +46,7 @@ class LiepinSpider(scrapy.Spider):
             last_page_href = last_page.attrs['href']
             last_page_num = re.search('\d+', last_page_href).group()
             max_page = int(last_page_num)
+            LOG.info("Url %s Max page %s", response.url, max_page)
 
         if re.search('curPage=(\d+)', response.url):
             cur_page = int(re.search('curPage=(\d+)', response.url).groups()[0])
@@ -52,14 +57,15 @@ class LiepinSpider(scrapy.Spider):
             next_page_url = re.sub('curPage=\d+', '', response.url)
             if next_page_url.endswith('&'):
                 next_page_url = next_page_url[:-1]
-
+            next_page_url = '{}&curPage={}'.format(next_page_url, cur_page + 1)
+            LOG.debug("yield next page url %s", next_page_url)
             yield scrapy.Request(next_page_url, callback=lambda r: self.pagination_jobs(r, max_page=max_page))
 
     def parse_job_detail(self, response):
-        soup = Soup(response.body)
-
-        from scrapy.shell import inspect_response
-        inspect_response(response, self)
+        soup = Soup(response.body, "lxml")
+        #
+        # from scrapy.shell import inspect_response
+        # inspect_response(response, self)
 
         require_degree, work_experience, required_skills, required_age = [r.text for r in
                                                                           soup.find('div', attrs={
@@ -69,23 +75,28 @@ class LiepinSpider(scrapy.Spider):
 
         position = basic_info[0]
         pub_date = basic_info[-1]
+        try:
 
-        yield JobItem(
-            title=soup.find('div', attrs={'class': 'title-info'}).h1.text.strip(),
-            salary=soup.find('p', attrs={'class': 'job-item-title'}).text.split('\n')[0],
+            yield JobItem(
+                title=soup.find('div', attrs={'class': 'title-info'}).h1.text.strip(),
+                salary=soup.find('p', attrs={'class': 'job-item-title'}).text.split('\n')[0],
 
-            require_degree=require_degree,
-            work_experience=work_experience,
-            required_skills=required_skills,
-            required_age=required_age,
+                require_degree=require_degree,
+                work_experience=work_experience,
+                required_skills=required_skills,
+                required_age=required_age,
 
-            tags=','.join([r.text for r in soup.find_all('span', attrs={'class': 'tag'})]),
+                tags=','.join([r.text for r in soup.find_all('span', attrs={'class': 'tag'})]),
 
-            job_description=soup.find('div', attrs={'class': 'content content-word'}).text,
+                job_description=soup.find('div', attrs={'class': 'content content-word'}).text,
 
-            company_name=soup.find('div', attrs={'class': 'title-info'}).h3.text.strip(),
-            company_description=soup.find('div', attrs={'class': 'job-item main-message noborder'}).text,
+                company_name=soup.find('div', attrs={'class': 'title-info'}).h3.text.strip(),
+                company_description=soup.find('div', attrs={'class': 'job-item main-message noborder'}).text,
 
-            position=position,
-            pub_date=pub_date
-        )
+                position=position,
+                pub_date=pub_date
+            )
+
+        except Exception as e:
+            LOG.warn("Job Item parse failure %s", str(e))
+            traceback.print_exc()
